@@ -1,0 +1,1568 @@
+configs/model
+neurosegnet.yml
+
+model:
+  name: NeuroSegNet
+  in_channels: 4                     
+  out_channels: 1                   
+  patch_size: [128, 128, 128]
+
+cnn_encoder:
+  backbone: resnet18
+  features: [32, 64, 128, 256]
+  dropout: 0.3
+
+transformer:
+  embed_dim: 128
+  depths: [2, 2, 2]
+  num_heads: [4, 4, 4]
+  window_size: 7
+  mlp_ratio: 4
+  dropout: 0.1
+  attention_dropout: 0.1
+
+fusion:
+  strategy: late          
+  learnable_alpha: true
+
+decoder:
+  structure: unetpp
+  skip_connections: true
+
+configs/data.yml
+data_root: data/
+raw_data_dir: data/raw/
+processed_data_dir: data/processed/
+processed_stacked_dir: data/processed_stacked/
+
+modalities:
+  - t1n
+  - t1c
+  - t2w
+  - t2f
+
+target: seg
+
+patch_size: [128, 128, 128]
+stride: [64, 64, 64]
+
+normalization: zscore
+resample: 1mm³
+skull_strip: true
+bias_correction: true
+
+augmentations:
+  flip: true
+  rotate: true
+  elastic: true
+  noise: true
+
+modality_dropout:            
+  enabled: true              # Activate masking during training
+  max_drop: 3                # Drop up to 3 of 4 also with a possibility of no drop out (I mean 0 can be a random number)
+
+configs/train.yml
+seed: 42
+epochs: 200
+batch_size: 4
+num_workers: 4
+
+device: cpu  
+
+optimizer:
+  type: AdamW
+  lr: 0.0003
+  weight_decay: 0.01
+
+scheduler:
+  type: CosineAnnealingWarmRestarts
+  T_0: 10
+  T_mult: 2
+  eta_min: !!float 1e-6
+
+loss:
+  type: DiceFocal
+  lambda_dice: 1.0
+  lambda_focal: 1.0
+  lambda_hd: 0.1
+  focal_alpha: 0.8
+  focal_gamma: 2.0
+
+early_stopping:
+  patience: 20
+  monitor: val_dice (I tought accuracy weel) 
+  mode: max
+
+amp: true  
+
+cross_validation:
+  folds: 7
+
+  stratify_by: tumor_grade
+
+data\processed
+Under it are : BraTS-GLI-00000-000_image.nii.gz and others
+
+data\processed_stacked
+Under it are:
+BraTS-GLI-00000-000_ground_truth.nii.gz and others
+
+data\raw\BraTS2025-GLI-PRE-Challenge-TrainingData\BraTS2025-GLI-PRE-Challenge-TrainingData
+Under it are : is the raw datset but some of the cell note bok cells will show how well data is accessed.
+
+data\raw\BraTS2025-GLI-PRE-Challenge-ValidationData\BraTS2025-GLI-PRE-Challenge-ValidationData
+
+
+Same as here. You will know. access through each case of glioma and modalities
+
+data\val_preprocessed\
+under it are: BraTS-GLI-00001-000_val_image.nii.gz and others
+
+deployment\app
+no codes there yet
+
+deployment\requirements
+the file is empty
+
+
+deployment\scripts\benchmark.py
+no codes there yet
+
+deployment\scripts\convert_to_onnx.py
+no codes there yet
+
+deployment\Dockerfile
+file empty
+
+docs/architecture.md
+file empty
+
+docs/deployment_guide.md
+file empty
+
+docs/xai_methods.md
+file empty
+
+experiments\neurosegnet_v1\checkpoints
+folder empty
+
+experiments\neurosegnet_v1\predictions
+folder empty
+
+notebooks/0_data_exploration.ipynb (I have run the file cells already)
+the cells are;
+cell 1:
+# This notebook performs initial data exploration and visualization of the BraTS 2025 dataset.
+# We visualize multiple MRI modalities (t1n, t1c, t2w, t2f) and segmentation labels to understand structure and volume layout.
+
+next cell:
+import os
+import sys
+from pathlib import Path
+import nibabel as nib
+import matplotlib.pyplot as plt
+import numpy as npa
+import glob
+
+# Set inline plotting
+%matplotlib inline
+
+next cell:
+# Define path to training data
+BRATS_TRAIN_PATH = Path(r"C:/Users/user/NeuroSegNet/data/raw/BraTS2025-GLI-PRE-Challenge-TrainingData/BraTS2025-GLI-PRE-Challenge-TrainingData")
+
+# We confirm contents of root path
+print("Root contains:", list(BRATS_TRAIN_PATH.iterdir()))
+
+next cell:
+# List all patient directories
+patients = sorted(BRATS_TRAIN_PATH.glob("BraTS-GLI-*"))
+print(f"Found {len(patients)} patient folders")
+
+next cell:
+# Show first 5 patient folder names
+for p in patients[:1251]:
+    print(p.name)
+
+next cell:
+# Select a patient
+example_patient = patients[0]
+
+# List modalities and segmentation
+modalities = ["t1n", "t1c", "t2w", "t2f"]
+images = {}
+for mod in modalities:
+    images[mod] = nib.load(str(example_patient / f"{example_patient.name}-{mod}.nii.gz")).get_fdata()
+
+label = nib.load(str(example_patient / f"{example_patient.name}-seg.nii.gz")).get_fdata()
+
+next cell:
+# Plot image slices 
+def plot_slice(data, title, slice_idx=80):
+    plt.figure(figsize=(4, 4))
+    plt.imshow(data[:, :, slice_idx], cmap='gray')
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+    
+# Plot a few modalities
+slice_idx = images['t1n'].shape[2] // 2
+for mod in modalities:
+    plot_slice(images[mod], title=mod.upper(), slice_idx=slice_idx)
+
+# Plot segmentation
+plot_slice(label, title="Segmentation Mask", slice_idx=slice_idx)
+
+next cell:
+# Summarize statistics
+print("Image shape:", images['t1n'].shape)
+print("Unique label values:", np.unique(label))
+output: Image shape: (182, 218, 182)
+Unique label values: [0. 1. 2. 3.]
+
+next cell:
+# Check if all files exist
+missing = []
+for patient in patients:
+    for mod in modalities + ["seg"]:
+        fname = patient / f"{patient.name}-{mod}.nii.gz"
+        if not fname.exists():
+            missing.append(str(fname))
+
+if missing:
+    print(f"Missing {len(missing)} files:")
+    for f in missing[:10]:
+        print("-", f)
+else:
+    print(" All modality and segmentation files found for all patients.")
+
+output:
+All modality and segmentation files found for all patients.
+
+next cell:
+THE VALIDATION DATASET
+BraTS2025-GLI-PRE-Challenge-ValidationData
+
+next cell:
+# Define path to Validation data
+BRATS_VALID_PATH = Path(r"C:/Users/user/NeuroSegNet/data/raw/BraTS2025-GLI-PRE-Challenge-ValidationData/BraTS2025-GLI-PRE-Challenge-ValidationData")
+
+# We confirm contents of root path
+print("Root contains:", list(BRATS_VALID_PATH.iterdir()))
+
+next cell:
+# List all patient directories
+patients = sorted(BRATS_VALID_PATH.glob("BraTS-GLI-*"))
+print(f"Found {len(patients)} patient folders") 
+
+next cell:
+# Show first 5 patient folder names
+for p in patients[:219]:
+    print(p.name)
+
+next cell:
+# Select a patient
+example_patient = patients[0]
+
+# List modalities and segmentation
+modalities = ["t1n", "t1c", "t2w", "t2f"]
+images = {}
+for mod in modalities:
+    images[mod] = nib.load(str(example_patient / f"{example_patient.name}-{mod}.nii.gz")).get_fdata()
+
+# Note the validation cases have no "-seg.nii.gz" files or ground truth files as found in the training data.
+
+next cell:
+# Plot image slices 
+def plot_slice(data, title, slice_idx=80):
+    plt.figure(figsize=(4, 4))
+    plt.imshow(data[:, :, slice_idx], cmap='gray')
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+    
+# Plot a few modalities
+slice_idx = images['t1n'].shape[2] // 2
+for mod in modalities:
+    plot_slice(images[mod], title=mod.upper(), slice_idx=slice_idx)
+
+next cell:
+# Check if all files exist
+missing = []
+for patient in patients:
+    for mod in modalities :
+        fname = patient / f"{patient.name}-{mod}.nii.gz"
+        if not fname.exists():
+            missing.append(str(fname))
+
+if missing:
+    print(f"Missing {len(missing)} files:")
+    for f in missing[:10]:
+        print("-", f)
+else:
+    print(" All modality and segmentation files found for all patients.")
+
+output: All modality and segmentation files found for all patients.
+
+notebooks/1_preprocessing_pipeline.ipynb (I have run this file too already with required occurrences and outputs.)
+cell 1:
+# Imports
+import os
+import numpy as np
+import nibabel as nib
+import matplotlib.pyplot as plt
+from pathlib import Path
+from tqdm import tqdm
+import SimpleITK as sitk # Loading, saving, and converting medical images
+from monai.transforms import (
+    LoadImaged, EnsureChannelFirstd, ConcatItemsd,
+    NormalizeIntensityd, Spacingd, CropForegroundd,
+    Resized, Compose, SaveImaged
+)
+from monai.data import Dataset
+import torch
+from monai.transforms import Resize
+from pathlib import Path 
+
+next cell:
+# Configuration
+brats_root = Path(r"C:/Users/user/NeuroSegNet/data/raw/BraTS2025-GLI-PRE-Challenge-TrainingData/BraTS2025-GLI-PRE-Challenge-TrainingData")
+output_dir = Path("data/processed/")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+modalities = ["t1n", "t1c", "t2w", "t2f"]
+print(f"Path exists: {brats_root.exists()}")
+print(f"Sample folders: {[p.name for p in brats_root.glob('*')][:5]}")
+
+next cell:
+# Build MONAI transform pipeline
+modality_keys = [f"image-{mod}" for mod in modalities]
+
+preprocessing = Compose([
+    LoadImaged(keys=modality_keys),
+    EnsureChannelFirstd(keys=modality_keys),
+    ConcatItemsd(keys=modality_keys, name="image", dim=0),  # Combine into (4, H, W, D)
+    NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    Spacingd(keys="image", pixdim=(1.0, 1.0, 1.0), mode="bilinear"),
+    CropForegroundd(keys="image", source_key="image"),
+    Resized(keys="image", spatial_size=(128, 128, 128)),
+    SaveImaged(keys="image", output_dir=output_dir, output_postfix="norm", separate_folder=False)
+])
+
+ next cell:
+# Robust Preprocessing Loop with Debug Prints
+processed = 0
+patients = sorted(list(brats_root.glob("*")))
+
+for patient_path in tqdm(patients, desc="Preprocessing Patients"):
+    patient_id = patient_path.name.strip()  # strip whitespace
+    data = {}
+    missing = False
+
+    for mod in modalities:
+        expected_file = patient_path / f"{patient_id}-{mod}.nii.gz"
+        
+        if not expected_file.exists():
+            # Print all files in the folder if missing
+            available = list(patient_path.glob("*.nii.gz"))
+            print(f"[Missing] Expected: {expected_file.name} in {patient_path}")
+            print(f"Available files: {[f.name for f in available]}")
+            missing = True
+            break
+        else:
+            data[f"image-{mod}"] = str(expected_file)
+
+    if missing:
+        continue
+
+    dataset = Dataset(data=[data], transform=preprocessing)
+
+    try:
+        _ = dataset[0]
+        processed += 1
+    except Exception as e:
+        print(f"[Error] {patient_id}: {e}")
+
+print(f"Successfully processed {processed} 4-channel images.")
+
+next cell:
+# Save preprocessed 4-channel volumes to disk
+output_dir = Path("../data/processed")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+for patient_path in tqdm(patients, desc="Saving preprocessed volumes"):
+    patient_id = patient_path.name.strip()
+    data = {}
+    missing = False
+
+    for mod in modalities:
+        expected_file = patient_path / f"{patient_id}-{mod}.nii.gz"
+        if not expected_file.exists():
+            missing = True
+            break
+        else:
+            data[f"image-{mod}"] = str(expected_file)
+
+    if missing:
+        continue
+
+    dataset = Dataset(data=[data], transform=preprocessing)
+
+    try:
+        img = dataset[0]["image"]
+        img_np = img.numpy()  # shape (4, H, W, D)
+        img_np = np.transpose(img_np, (1, 2, 3, 0))  # (H, W, D, 4)
+
+        out_img = nib.Nifti1Image(img_np, affine=np.eye(4))
+        nib.save(out_img, output_dir / f"{patient_id}_image.nii.gz")
+        print(f"Saved {patient_id}_image.nii.gz")
+    except Exception as e:
+        print(f"Failed to save {patient_id}: {e}")
+
+next cell:
+ 
+
+
+# Visualize a sample saved 4-channel volume
+saved_files = sorted(output_dir.glob("*.nii.gz"))
+print(f"Files saved: {[f.name for f in saved_files]}")
+print(f"Total saved: {len(saved_files)}")
+
+# Only proceed if something was saved
+if saved_files:
+    sample_file = saved_files[0]
+    img = nib.load(sample_file).get_fdata()
+    img = np.transpose(img, (3, 0, 1, 2))  # (C, H, W, D)
+    print(f"Loaded {sample_file.name}, new shape after transpose: {img.shape}")
+
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    for i in range(4):
+        axes[i].imshow(img[i, :, :, img.shape[3] // 2], cmap='gray')
+        axes[i].set_title(modalities[i])
+        axes[i].axis("off")
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No preprocessed images found.")
+
+next cell:
+# === Directories ===
+input_dir = Path("C:/Users/user/NeuroSegNet/data/processed")
+segmentation_dir = Path("C:/Users/user/NeuroSegNet/data/raw/BraTS2025-GLI-PRE-Challenge-TrainingData/BraTS2025-GLI-PRE-Challenge-TrainingData")
+output_dir = Path("C:/Users/user/NeuroSegNet/data/processed_stacked")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# === Loop through all preprocessed images ===
+for image_file in sorted(input_dir.glob("*_image.nii.gz")):
+    # Fix: Remove full suffix to get proper patient ID
+    patient_id = image_file.name.replace("_image.nii.gz", "")
+    print(f"Processing {patient_id}...")
+
+    # === Load preprocessed 4-channel image ===
+    img = nib.load(str(image_file))
+    img_data = img.get_fdata()  # [H, W, D, 4]
+    img_data = np.moveaxis(img_data, -1, 0)  # [4, H, W, D]
+    img_tensor = torch.tensor(img_data).unsqueeze(0).float()  # [1, 4, H, W, D]
+
+    # === Find corresponding segmentation ===
+    seg_path = segmentation_dir / patient_id / f"{patient_id}-seg.nii.gz"
+    if not seg_path.exists():
+        print(f" Segmentation not found for {patient_id}, skipping.")
+        continue
+
+    seg = nib.load(str(seg_path))
+    seg_data = seg.get_fdata()  # [H, W, D]
+    seg_tensor = torch.tensor(seg_data).unsqueeze(0).unsqueeze(0).float()  # [1, 1, H, W, D]
+
+    # === Resize mask if needed ===
+    if seg_tensor.shape[2:] != img_tensor.shape[2:]:
+        print(f" Resizing mask for {patient_id}...")
+        resize = Resize(spatial_size=img_tensor.shape[2:], mode="nearest")
+        seg_tensor = resize(seg_tensor.squeeze(0)).unsqueeze(0)  # Back to [1, 1, H, W, D]
+
+    # === Stack ===
+    stacked_tensor = torch.cat([img_tensor, seg_tensor], dim=1)  # [1, 5, H, W, D]
+    stacked_data = stacked_tensor.squeeze(0).numpy()  # [5, H, W, D]
+    stacked_data = np.moveaxis(stacked_data, 0, -1)  # [H, W, D, 5]
+
+    # === Save ===
+    output_path = output_dir / f"{patient_id}_ground_truth.nii.gz"
+    nib.save(nib.Nifti1Image(stacked_data, affine=img.affine, header=img.header), str(output_path))
+    print(f" Saved: {output_path}")
+
+next cell:
+# === Define the path to the stacked data ===
+stacked_dir = Path("../data/processed_stacked")
+
+# === Load stacked files ===
+stacked_files = sorted(stacked_dir.glob("*.nii.gz"))
+print(f"Stacked files found: {len(stacked_files)}")
+
+if stacked_files:
+    # Load one stacked volume: [H, W, D, 5]
+    img = nib.load(stacked_files[0]).get_fdata()
+    img = np.transpose(img, (3, 0, 1, 2))  # [5, H, W, D]
+    
+    # Extract segmentation channel
+    seg_channel = img[4]
+    print("Segmentation unique values:", np.unique(seg_channel))
+    print("Segmentation min/max:", seg_channel.min(), seg_channel.max())
+
+    # === Visualization ===
+    fig, axes = plt.subplots(1, 5, figsize=(25, 5))
+    mid_slice = img.shape[3] // 2  # Mid axial slice
+
+    for i in range(5):
+        slice_img = img[i, :, :, mid_slice]
+        if i < 4:
+            axes[i].imshow(slice_img, cmap="gray")
+            axes[i].set_title(f"Modality {i + 1}", fontsize=12)
+        else:
+            axes[i].imshow(
+                slice_img,
+                cmap="gray",
+                vmin=0,
+                vmax=np.max(seg_channel),
+                interpolation="nearest"
+            )
+            axes[i].set_title("Segmentation", fontsize=12)
+        axes[i].axis("off")
+
+    plt.suptitle(f"{stacked_files[0].name} - Mid-slice preview", fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print("No stacked volumes found in:", stacked_dir)
+output:
+Stacked files found: 1246
+Segmentation unique values: [0. 1. 2. 3.]
+Segmentation min/max: 0.0 3.0
+
+next cell:
+Preprocessing Validation Data
+
+next cell:
+# Configuration
+val_root = Path(r"C:/Users/user/NeuroSegNet/data/raw/BraTS2025-GLI-PRE-Challenge-ValidationData/BraTS2025-GLI-PRE-Challenge-ValidationData")
+
+output_dir = Path("data/val_preprocessed/")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+modalities = ["t1n", "t1c", "t2w", "t2f"]
+print(f"Path exists: {val_root.exists()}")
+print(f"Sample folders: {[p.name for p in val_root.glob('*')][:5]}")
+
+output: Path exists: True
+Sample folders: ['BraTS-GLI-00001-000', 'BraTS-GLI-00001-001', 'BraTS-GLI-00013-000', 'BraTS-GLI-00013-001', 'BraTS-GLI-00015-000']
+
+next cell:
+# Define a new preprocessing pipeline for validation data
+modality_keys = [f"image-{mod}" for mod in modalities]
+preprocessing_val = Compose([
+    LoadImaged(keys=modality_keys),
+    EnsureChannelFirstd(keys=modality_keys),
+    ConcatItemsd(keys=modality_keys, name="image", dim=0),
+    NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    Spacingd(keys="image", pixdim=(1.0, 1.0, 1.0), mode="bilinear"),
+    CropForegroundd(keys="image", source_key="image"),
+    Resized(keys="image", spatial_size=(128, 128, 128)),
+    SaveImaged(keys="image", output_dir=output_dir, output_postfix="norm", separate_folder=False)
+])
+
+next cell:
+# Preprocessing Loop with Debug Prints
+processed = 0
+patients = sorted(list(val_root.glob("*")))
+
+for patient_path in tqdm(patients, desc="Preprocessing Val MRI"):
+    patient_id = patient_path.name.strip()  # strip whitespace
+    data = {}
+    missing = False
+
+    for mod in modalities:
+        expected_file = patient_path / f"{patient_id}-{mod}.nii.gz"
+        
+        if not expected_file.exists():
+            # Print all files in the folder if missing
+            available = list(patient_path.glob("*.nii.gz"))
+            print(f"[Missing] Expected: {expected_file.name} in {patient_path}")
+            print(f"Available files: {[f.name for f in available]}")
+            missing = True
+            break
+        else:
+            data[f"image-{mod}"] = str(expected_file)
+
+    if missing:
+        continue
+
+    dataset = Dataset(data=[data], transform=preprocessing_val)
+
+    try:
+        _ = dataset[0]
+        processed += 1
+    except Exception as e:
+        print(f"[Error] {patient_id}: {e}")
+
+print(f"Successfully processed {processed} 4-channelled val MRI.")
+
+next cell:
+# Save preprocessed 4-channel validation MRI modalities volume to disk
+output_dir = Path("../data/val_preprocessed")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+for patient_path in tqdm(patients, desc="Saving preprocessed volumes"):
+    patient_id = patient_path.name.strip()
+    data = {}
+    missing = False
+
+    for mod in modalities:
+        expected_file = patient_path / f"{patient_id}-{mod}.nii.gz"
+        if not expected_file.exists():
+            missing = True
+            break
+        else:
+            data[f"image-{mod}"] = str(expected_file)
+
+    if missing:
+        continue
+
+    dataset = Dataset(data=[data], transform=preprocessing_val)
+
+    try:
+        img = dataset[0]["image"]
+        img_np = img.numpy()  # shape (4, H, W, D)
+        img_np = np.transpose(img_np, (1, 2, 3, 0))  # (H, W, D, 4)
+
+        out_img = nib.Nifti1Image(img_np, affine=np.eye(4))
+        nib.save(out_img, output_dir / f"{patient_id}_val_image.nii.gz")
+        print(f"Saved {patient_id}_val_image.nii.gz")
+    except Exception as e:
+        print(f"Failed to save {patient_id}: {e}")
+
+next cell:
+# Visualize a sample saved multimodal mri preprocessed data
+saved_files = sorted(output_dir.glob("*.nii.gz"))
+print(f"Files saved: {[f.name for f in saved_files]}")
+print(f"Total saved: {len(saved_files)}")
+
+# Only proceed if something was saved
+if saved_files:
+    sample_file = saved_files[0]
+    img = nib.load(sample_file).get_fdata()
+    img = np.transpose(img, (3, 0, 1, 2))  # (C, H, W, D)
+    print(f"Loaded {sample_file.name}, new shape after transpose: {img.shape}")
+
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    for i in range(4):
+        axes[i].imshow(img[i, :, :, img.shape[3] // 2], cmap='gray')
+        axes[i].set_title(modalities[i])
+        axes[i].axis("off")
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No preprocessed images found.")
+output:
+Total saved: 219
+Loaded BraTS-GLI-00001-000_val_image.nii.gz, new shape after transpose: (4, 128, 128, 128)
+
+notebooks/3_train_neurosegnet.ipynb
+no codes yet
+
+notebooks/4_evaluate_models.ipynb
+no codes yet
+
+notebooks/5_xai_gradcam.ipynb
+no codes yet
+
+notebooks/6_xai_attention.ipynb
+no codes yet
+
+src\data\augmentation.py
+from monai.transforms import (
+    Compose,
+    RandFlipd,
+    RandRotate90d,
+    RandAffined,
+    RandGaussianNoised,
+    RandBiasFieldd,
+    RandAdjustContrastd,
+    RandScaleIntensityd,
+    RandShiftIntensityd,
+    RandCropByPosNegLabeld,
+    EnsureTyped,
+    ToTensord,
+)
+
+def get_train_transforms(patch_size=(128, 128, 128), keys=("image", "label")):
+# Returns a MONAI Compose transform pipeline with strong training augmentations. Designed to improve generalization for 3D brain tumor segmentation tasks.
+    return Compose([
+        EnsureTyped(keys=keys),
+
+        # Spatial augmentations
+        RandFlipd(keys=keys, spatial_axis=[0], prob=0.5),
+        RandFlipd(keys=keys, spatial_axis=[1], prob=0.5),
+        RandFlipd(keys=keys, spatial_axis=[2], prob=0.5),
+        RandRotate90d(keys=keys, prob=0.5, max_k=3),
+
+        RandAffined(
+            keys=keys,
+            rotate_range=(0.1, 0.1, 0.1),
+            shear_range=(0.1, 0.1, 0.1),
+            translate_range=(10, 10, 10),
+            scale_range=(0.1, 0.1, 0.1),
+            mode=("bilinear", "nearest"),
+            prob=0.5,
+        ),
+
+        # Intensity augmentations
+        RandGaussianNoised(keys=["image"], prob=0.2),
+        RandBiasFieldd(keys=["image"], prob=0.2),
+        RandAdjustContrastd(keys=["image"], prob=0.2),
+        RandScaleIntensityd(keys=["image"], factors=0.1, prob=0.3),
+        RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.3),
+
+        # Smart patch sampling with tumor context
+        RandCropByPosNegLabeld(
+            keys=keys,
+            label_key="label",
+            spatial_size=patch_size,
+            pos=1,
+            neg=1,
+            num_samples=2,
+            image_key="image",
+            image_threshold=0,
+        ),
+
+        ToTensord(keys=keys)
+    ])
+
+src\data\dataloader.py
+import os
+from monai.data import DataLoader, Dataset
+from monai.transforms import (
+    Compose, LoadImaged, EnsureChannelFirstd,
+    Orientationd, Spacingd, NormalizeIntensityd,
+    RandCropByPosNegLabeld, ToTensord
+)
+from monai.transforms import RandFlipd, RandRotate90d, RandGaussianNoised
+from typing import List, Tuple
+
+
+def get_transforms(patch_size: Tuple[int, int, int], is_train=True, use_5_channels=True):
+    keys = ["image", "label"] if use_5_channels else ["image"]
+
+    base_transforms = [
+    LoadImaged(keys=keys),
+    EnsureChannelFirstd(keys=keys),
+    Orientationd(keys=keys, axcodes="RAS"),
+    Spacingd(keys=keys, pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
+    NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    
+    # Clip intensity to remove MRI outliers (0.5th–99.5th percentile)
+    # You can adjust the intensity range if needed
+    lambda x: {
+        **x,
+        "image": x["image"].clamp(min=-5, max=5)  # or use torch.quantile manually if needed
+    },
+    # NEW: Ensure binary mask (some masks are 0-255, or have 2, 4, ..
+    lambda x: {
+        **x,
+        "label": (x["label"] > 0).float()
+    },
+   ]
+
+    if is_train:
+        base_transforms += [
+            RandFlipd(keys=keys, prob=0.5, spatial_axis=0),
+            RandRotate90d(keys=keys, prob=0.5, max_k=3),
+            RandGaussianNoised(keys="image", prob=0.15),
+            RandCropByPosNegLabeld(
+                keys=keys, label_key="label",
+                spatial_size=patch_size, pos=1, neg=1, num_samples=2,
+            ),
+        ]
+
+    base_transforms += [ToTensord(keys=keys)]
+    return Compose(base_transforms)
+
+
+def create_loader(data_dicts: List[dict], batch_size=2, num_workers=4,
+                  patch_size=(128, 128, 128), is_train=True, use_5_channels=True):
+    #Creates a MONAI DataLoader with optional 5-channel label (train) or 4-channel input (val/test).
+    
+    transforms = get_transforms(patch_size, is_train, use_5_channels)
+    dataset = Dataset(data=data_dicts, transform=transforms)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=is_train, num_workers=num_workers)
+    return loader
+
+src/data/preprocessing.py
+import os
+import numpy as np
+import nibabel as nib
+import SimpleITK as sitk
+from pathlib import Path
+from typing import List
+
+
+def n4_bias_field_correction(image_path: Path) -> sitk.Image: # Applies N4ITK bias field correction to a given NIfTI image.
+    image = sitk.ReadImage(str(image_path))
+    mask = sitk.OtsuThreshold(image, 0, 1, 200)
+    image = sitk.Cast(image, sitk.sitkFloat32)
+    corrector = sitk.N4BiasFieldCorrectionImageFilter()
+    corrected = corrector.Execute(image, mask)
+    return corrected
+
+
+def skull_strip(image: sitk.Image) -> sitk.Image: # Skull stripping using Otsu-based masking.
+    mask = sitk.OtsuThreshold(image, 0, 1, 200)
+    return sitk.Mask(image, mask)
+
+
+def resample_image(image: sitk.Image, target_spacing=(1.0, 1.0, 1.0)) -> sitk.Image: # Resamples image to isotropic spacing using linear interpolation.
+    original_spacing = image.GetSpacing()
+    original_size = image.GetSize()
+    new_size = [
+        int(round(osz * ospc / tspc))
+        for osz, ospc, tspc in zip(original_size, original_spacing, target_spacing)
+    ]
+
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetOutputSpacing(target_spacing)
+    resampler.SetSize(new_size)
+    resampler.SetOutputDirection(image.GetDirection())
+    resampler.SetOutputOrigin(image.GetOrigin())
+    resampler.SetInterpolator(sitk.sitkLinear)
+
+    return resampler.Execute(image)
+
+
+def normalize_intensity(image: np.ndarray, clip_range=(-1000, 1000)) -> np.ndarray: # Normalizes intensities to [0, 1] after clipping.
+    image = np.clip(image, *clip_range)
+    image = (image - image.min()) / (image.max() - image.min() + 1e-8)
+    return image
+
+
+def preprocess_case(modality_paths: List[Path], seg_path: Path = None,
+                    apply_skull_strip=True, apply_bias=True, target_spacing=(1.0, 1.0, 1.0)) -> np.ndarray:
+    # Preprocesses a single case with 4 modalities (+ optional segmentation).
+    # Returns a stacked numpy array: shape (C, H, W, D) where C = 4 or 5
+    processed_modalities = []
+
+    for path in modality_paths:
+        image = n4_bias_field_correction(path) if apply_bias else sitk.ReadImage(str(path))
+        image = resample_image(image, target_spacing=target_spacing)
+        if apply_skull_strip:
+            image = skull_strip(image)
+        image_np = sitk.GetArrayFromImage(image)
+        image_np = normalize_intensity(image_np)
+        processed_modalities.append(image_np)
+
+    stacked = np.stack(processed_modalities, axis=0)  # (4, H, W, D)
+
+    if seg_path:
+        seg = sitk.ReadImage(str(seg_path))
+        seg = resample_image(seg, target_spacing=target_spacing)
+        seg_np = sitk.GetArrayFromImage(seg)
+        stacked = np.concatenate([stacked, seg_np[np.newaxis, ...]], axis=0)  # (5, H, W, D)
+
+    return stacked
+
+
+def save_nifti(array: np.ndarray, reference_path: Path, save_path: Path):
+
+    # Saves a NumPy array as a NIfTI file using reference affine/header.
+    ref_img = nib.load(str(reference_path))
+    new_img = nib.Nifti1Image(array, affine=ref_img.affine, header=ref_img.header)
+    nib.save(new_img, str(save_path))
+
+src/training/loss.py
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from monai.losses import DiceLoss
+
+class DiceFocalLoss(nn.Module):
+    # Combines Dice Loss and Focal Loss for binary medical image segmentation. Works well in imbalanced tumor segmentation tasks.
+    def __init__(self, alpha=0.8, gamma=2.0, dice_weight=1.0, focal_weight=1.0):
+        super(DiceFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.dice_weight = dice_weight
+        self.focal_weight = focal_weight
+        self.dice_loss_fn = DiceLoss(sigmoid=True)
+        self.bce_loss_fn = nn.BCEWithLogitsLoss()
+
+    def forward(self, inputs, targets):
+        targets = (targets > 0.5).float()  # Ensure binary format
+
+        # Focal loss component (raw logits used)
+        bce = self.bce_loss_fn(inputs, targets)
+        pt = torch.exp(-bce)
+        focal = self.alpha * (1 - pt) ** self.gamma * bce
+
+        # Dice loss (no sigmoid needed, handled internally)
+        dice = self.dice_loss_fn(inputs, targets)
+
+        return self.focal_weight * focal.mean() + self.dice_weight * dice
+
+
+class HD95Loss(nn.Module):
+    # Placeholder for Hausdorff Distance (95%) loss. Used only for evaluation metrics, not training.
+    def __init__(self):
+        super(HD95Loss, self).__init__()
+        raise NotImplementedError("HD95 is only used for evaluation, not training.")
+
+
+class CompositeLoss(nn.Module): # If HD95 gets implemented later, it can be activated.
+    def __init__(self, use_hd=False):
+        super(CompositeLoss, self).__init__()
+        self.use_hd = use_hd
+        self.dice_focal = DiceFocalLoss()
+        if self.use_hd:
+            self.hd_loss = HD95Loss()  
+
+    def forward(self, inputs, targets):
+        loss = self.dice_focal(inputs, targets)
+        if self.use_hd:
+            hd = self.hd_loss(inputs, targets)
+            loss += 0.1 * hd
+        return loss
+
+if __name__ == "__main__":
+    # Test run
+    pred = torch.rand((2, 1, 128, 128, 128))
+    true = torch.randint(0, 2, (2, 1, 128, 128, 128)).float()
+
+    loss_fn = DiceFocalLoss()
+    loss = loss_fn(pred, true)
+    print("Test Loss:", loss.item())
+
+src/training/train_loop.py
+import torch
+import torch.nn as nn
+from tqdm import tqdm
+from pathlib import Path
+import json
+import sys
+
+# Add project root to import local modules
+sys.path.append("C:/Users/user/NeuroSegNet/")
+from src.training.loss import DiceFocalLoss
+from src.training.validation import evaluate  
+
+def train(model, train_loader, val_loader, optimizer, scheduler, config, device):
+    torch.manual_seed(config["seed"])
+    model = model.to(device)
+
+    # Build loss function
+    loss_kwargs = config.get("loss", {})
+    dice_w  = loss_kwargs.get("lambda_dice", 1.0)
+    focal_w = loss_kwargs.get("lambda_focal", 1.0)
+    loss_fn = DiceFocalLoss(dice_weight=dice_w, focal_weight=focal_w)
+
+    # Resume checkpoint
+    checkpoint_path = Path(config["checkpoint_path"])
+    best_loss_file = checkpoint_path.with_suffix(".val_loss.json")
+    best_val_loss = float("inf")
+
+    if checkpoint_path.exists() and best_loss_file.exists():
+        model.load_state_dict(torch.load(str(checkpoint_path), map_location=device))
+        with open(best_loss_file, "r") as f:
+            best_val_loss = float(json.load(f)["best_val_loss"])
+        print(f"Resumed from: {checkpoint_path}")
+        print(f"Starting from previous best validation loss: {best_val_loss:.4f}")
+    else:
+        print("No checkpoint found — training from scratch.")
+
+    patience       = config["early_stopping"]["patience"]
+    monitor_metric = config["early_stopping"]["monitor"]
+    patience_counter = 0
+
+    # Training loop
+    for epoch in range(config["epochs"]):
+        model.train()
+        loop = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{config['epochs']}]")
+
+        for batch in loop:
+            inputs = batch["image"].to(device)
+            labels = batch["label"].to(device)
+
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = loss_fn(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            loop.set_postfix(loss=loss.item())
+
+        scheduler.step()
+
+        # Use real validation function (with metrics, returns val_loss only)
+        metrics = evaluate(model, val_loader, loss_fn, device)
+        val_loss = metrics["val_loss"]
+        print(f"Validation Loss: {val_loss:.4f}")
+
+        # Check for improvement
+        if val_loss < best_val_loss:
+            print(f"Validation {monitor_metric} improved. Saving model...")
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), str(checkpoint_path))
+            with open(best_loss_file, "w") as f:
+                json.dump({"best_val_loss": best_val_loss}, f)
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            print(f"No improvement. Patience: {patience_counter}/{patience}")
+
+        if patience_counter >= patience:
+            print("Early stopping triggered.")
+            break
+
+src/training/validation.py
+import torch
+import time
+import numpy as np
+from monai.metrics import DiceMetric, HausdorffDistanceMetric
+from monai.transforms import AsDiscrete
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+from monai.transforms import Activations 
+
+def evaluate(model, val_loader, loss_fn, device):
+    model.eval()
+    val_loss = 0.0
+    # CHANGED: include_background=True and threshold=0.3
+    dice_metric = DiceMetric(include_background=True, reduction="mean_batch")
+    hd95_metric = HausdorffDistanceMetric(include_background=True, percentile=95.0, reduction="mean_batch")
+    post_pred = AsDiscrete(argmax=False, threshold=0.3)  # CHANGED threshold
+    post_label = AsDiscrete(argmax=False, threshold=0.5)
+    sigmoid = Activations(sigmoid=True)  # <-- NEW LINE
+
+    precision_vals = []
+    recall_vals = []
+    f1_vals = []
+    specificity_vals = []
+
+    start_time = time.time()
+
+    with torch.no_grad():
+        for batch in val_loader:
+            inputs = batch["image"].to(device)
+            labels = batch["label"].to(device)
+            labels = (labels > 0).float()  # Keep this binarization
+
+            # CHANGED: Add sigmoid activation
+            outputs = sigmoid(model(inputs))  # <-- FIX APPLIED HERE
+            loss = loss_fn(outputs, labels)
+            val_loss += loss.item()
+
+            preds_bin = post_pred(outputs)
+            labels_bin = post_label(labels)
+
+            # Rest of your original code remains exactly the same...
+            dice_metric(preds_bin, labels_bin)
+            hd95_metric(preds_bin, labels_bin)
+
+            for p, l in zip(preds_bin, labels_bin):
+                p_np = p.cpu().numpy().astype(int).ravel()
+                l_np = l.cpu().numpy().astype(int).ravel()
+
+                precision_vals.append(precision_score(l_np, p_np, zero_division=0))
+                recall_vals.append(recall_score(l_np, p_np, zero_division=0))
+                f1_vals.append(f1_score(l_np, p_np, zero_division=0))
+
+                cm = confusion_matrix(l_np, p_np, labels=[0, 1])
+                tn, fp, fn, tp = cm.ravel() if cm.shape == (2, 2) else (0, 0, 0, 0)
+                spec = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+                specificity_vals.append(spec)
+
+    end_time = time.time()
+    inference_time = end_time - start_time
+
+    metrics = {
+        "val_loss": val_loss / len(val_loader),
+        "dice": dice_metric.aggregate().item(),
+        "hd95": hd95_metric.aggregate().item(),
+        "precision": np.mean(precision_vals),
+        "recall": np.mean(recall_vals),
+        "specificity": np.mean(specificity_vals),
+        "f1_score": np.mean(f1_vals),
+        "inference_time": inference_time
+    }
+
+    dice_metric.reset()
+    hd95_metric.reset()
+    return metrics
+
+src/utils/config_loader.py
+import yaml
+from pathlib import Path
+from typing import Union
+
+
+def load_config(config_path: Union[str, Path]) -> dict:
+    """
+    Load a YAML configuration file into a Python dictionary.
+
+    Args:
+        config_path (str or Path): Path to the YAML configuration file.
+
+    Returns:
+        dict: Configuration as a dictionary.
+    """
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found at: {config_path}")
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    return config
+
+
+def validate_config(config: dict, required_keys: list):
+    """
+    Check if required keys exist in the configuration dictionary.
+
+    Args:
+        config (dict): Loaded configuration.
+        required_keys (list): List of expected keys.
+
+    Raises:
+        KeyError: If any required key is missing.
+    """
+    missing_keys = [key for key in required_keys if key not in config]
+    if missing_keys:
+        raise KeyError(f"Missing config keys: {', '.join(missing_keys)}")
+    print("Config validated successfully.")
+
+
+def print_config_summary(config: dict, title="Configuration Summary"):
+    """
+    Nicely format and print a summary of the configuration dictionary.
+
+    Args:
+        config (dict): Loaded configuration.
+        title (str): Header title for the summary.
+    """
+    print(f"\n{title}")
+    print("=" * len(title))
+    for key, value in config.items():
+        print(f"{key:>20} : {value}")
+    print("=" * len(title) + "\n")
+
+src/utils/helpers.py
+import os
+import torch
+import numpy as np
+import random
+import time
+from pathlib import Path
+
+
+def set_seed(seed=42):
+    """
+    Set all random seeds for full reproducibility.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def ensure_dir(path):
+    """
+    Create directory if it doesn't exist.
+    """
+    os.makedirs(path, exist_ok=True)
+
+
+def save_checkpoint(model, optimizer, epoch, loss, path):
+    """
+    Save model checkpoint safely (state_dict only).
+
+    Args:
+        model (torch.nn.Module): Model instance.
+        optimizer (torch.optim.Optimizer): Optimizer instance.
+        epoch (int): Current epoch.
+        loss (float): Current loss value.
+        path (str): Path to save the checkpoint.
+    """
+    if isinstance(model, torch.nn.DataParallel):
+        model_state = model.module.state_dict()
+    else:
+        model_state = model.state_dict()
+
+    torch.save({
+        "epoch": epoch,
+        "model_state_dict": model_state,
+        "optimizer_state_dict": optimizer.state_dict(),
+        "loss": loss
+    }, path)
+    print(f" Checkpoint saved: {path}")
+
+
+def get_timestamp():
+    """
+    Get formatted current time for logging and filenames.
+    """
+    return time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+
+
+def log_model_size(model):
+    """
+    Print total number of trainable parameters in the model.
+    """
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f" Model has {total_params:,} trainable parameters.")
+
+
+def count_class_voxels(mask_tensor, class_labels):
+    """
+    Count number of voxels per class in a 3D segmentation label tensor.
+
+    Args:
+        mask_tensor (torch.Tensor): Tensor of shape [B, H, W, D] or [B, C, H, W, D].
+        class_labels (list[int]): List of class IDs to count.
+
+    Returns:
+        dict: Mapping from class label to voxel count.
+    """
+    if mask_tensor.ndim == 5:
+        # Convert one-hot to argmax if needed
+        mask_tensor = torch.argmax(mask_tensor, dim=1)
+
+    counts = {}
+    for cls in class_labels:
+        counts[cls] = torch.sum(mask_tensor == cls).item()
+    return counts
+
+
+src/xai/attention_rollout.py
+import torch
+import torch.nn.functional as F
+import numpy as np
+
+
+class AttentionRollout:
+    def __init__(self, model, head_fusion='mean', discard_ratio=0.0):
+        # Initializes the AttentionRollout explainer.
+       
+        self.model = model
+        self.head_fusion = head_fusion
+        self.discard_ratio = discard_ratio
+        self.attentions = []
+
+        # Register hooks on transformer blocks
+        for block in self._get_transformer_blocks():
+            block.attn.register_forward_hook(self._save_attention)
+
+    def _get_transformer_blocks(self):
+        #Get transformer blocks that contain self-attention.
+        
+        if hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'blocks'):
+            return self.model.transformer.blocks
+        else:
+            raise AttributeError("Model does not have accessible transformer blocks")
+
+    def _save_attention(self, module, input, output):
+        """
+        Hook to save attention maps during forward pass.
+        """
+        attn = output[1] if isinstance(output, tuple) else output
+        self.attentions.append(attn.detach().cpu())
+
+    def compute_rollout_attention(self):
+        """
+        Computes the attention rollout matrix by multiplying attention maps across layers.
+        Returns:
+            torch.Tensor: shape (batch, tokens, tokens)
+        """
+        result = torch.eye(self.attentions[0].size(-1))  # Identity matrix
+
+        with torch.no_grad():
+            for attn in self.attentions:
+                if self.head_fusion == 'mean':
+                    attn_fused = attn.mean(dim=1)
+                elif self.head_fusion == 'max':
+                    attn_fused = attn.max(dim=1)[0]
+                else:
+                    raise ValueError("head_fusion must be 'mean' or 'max'")
+
+                # Apply discard mask
+                if self.discard_ratio > 0:
+                    batch_size, tokens, _ = attn_fused.size()
+                    flat = attn_fused.view(batch_size, -1)
+                    topk = int(flat.size(1) * (1 - self.discard_ratio))
+                    _, indices = flat.topk(topk, dim=-1)
+                    mask = torch.zeros_like(flat).scatter_(-1, indices, 1).view_as(attn_fused)
+                    attn_fused = attn_fused * mask
+
+                # Normalize attention
+                attn_fused = attn_fused / (attn_fused.sum(dim=-1, keepdim=True) + 1e-6)
+
+                result = torch.matmul(attn_fused, result)
+
+        return result  # (batch_size, tokens, tokens)
+
+    def reset(self):
+        """
+        Reset stored attention maps.
+        """
+        self.attentions = []
+
+
+src/xai/gradcam.py
+import torch
+import torch.nn.functional as F
+from torch.nn import ReLU
+
+
+class GradCAM:
+    def __init__(self, model, target_layer):
+    
+        self.model = model
+        self.target_layer = target_layer
+        self.gradients = None
+        self.activations = None
+        self._register_hooks()
+
+    def _register_hooks(self):
+        def forward_hook(module, input, output):
+            self.activations = output.detach()
+
+        def backward_hook(module, grad_input, grad_output):
+            self.gradients = grad_output[0].detach()
+
+        self.target_layer.register_forward_hook(forward_hook)
+        self.target_layer.register_full_backward_hook(backward_hook)
+
+    def generate_cam(self, input_tensor, target_class=None):
+        """
+        Generate a Grad-CAM activation map.
+
+        Args:
+            input_tensor (torch.Tensor): Shape [B, C, D, H, W]
+            target_class (int or tensor): Class index to explain (if None, use argmax)
+
+        Returns:
+            torch.Tensor: CAM of shape [B, 1, D, H, W]
+        """
+        self.model.eval()
+        input_tensor = input_tensor.requires_grad_()
+        output = self.model(input_tensor)
+
+        if target_class is None:
+            target_class = output.argmax(dim=1)
+
+        one_hot = torch.zeros_like(output)
+        for i in range(output.shape[0]):
+            one_hot[i, target_class[i]] = 1.0
+
+        self.model.zero_grad()
+        output.backward(gradient=one_hot, retain_graph=True)
+
+        # Compute CAM
+        weights = self.gradients.mean(dim=[2, 3, 4], keepdim=True)  # Global average pooling
+        cam = torch.sum(weights * self.activations, dim=1, keepdim=True)
+        cam = ReLU()(cam)
+
+        # Resize to match input
+        cam = F.interpolate(cam, size=input_tensor.shape[2:], mode='trilinear', align_corners=False)
+
+        # Normalize
+        B = cam.shape[0]
+        for i in range(B):
+            cam[i] -= cam[i].min()
+            cam[i] /= cam[i].max() + 1e-8
+
+        return cam  # Shape: [B, 1, D, H, W]
+
+
+if __name__ == "__main__":
+    from src.models.neurosegnet.cnn_blocks import CNNEncoder
+
+    model = CNNEncoder()
+    input_tensor = torch.randn(1, 4, 128, 128, 128)
+    target_layer = model.res_blocks[-1]
+
+    gradcam = GradCAM(model, target_layer)
+    cam_output = gradcam.generate_cam(input_tensor)
+
+    print("CAM shape:", cam_output.shape)  # Should be (1, 1, 128, 128, 128)
+
+
+test/test_metrics.py
+import torch
+from monai.metrics import DiceMetric, HausdorffDistanceMetric
+
+def test_dice_metric():
+    pred = torch.randint(0, 2, (2, 3, 128, 128, 128))
+    label = torch.randint(0, 2, (2, 3, 128, 128, 128))
+
+    metric = DiceMetric(include_background=True, reduction="mean")
+    score = metric(pred, label)
+    assert score.shape == (1,), "Dice metric output should be scalar."
+
+def test_hd95_metric():
+    pred = torch.randint(0, 2, (2, 3, 128, 128, 128))
+    label = torch.randint(0, 2, (2, 3, 128, 128, 128))
+
+    metric = HausdorffDistanceMetric(include_background=True, percentile=95.0, reduction="mean")
+    score = metric(pred, label)
+    assert score.shape == (1,), "HD95 metric output should be scalar."
+
+
+test/test_preprocessing.py
+from src.data.preprocessing import normalize_zscore, resample_image
+import numpy as np
+import nibabel as nib
+
+def test_normalization_zscore():
+    dummy = np.random.randn(128, 128, 128)
+    normed = normalize_zscore(dummy)
+    assert np.isclose(np.mean(normed), 0, atol=1e-1), "Z-score mean not near 0"
+    assert np.isclose(np.std(normed), 1, atol=1e-1), "Z-score std not near 1"
+
+def test_resample_image():
+    # Create dummy NIfTI
+    affine = np.eye(4)
+    data = np.random.rand(64, 64, 64)
+    img = nib.Nifti1Image(data, affine)
+    resampled = resample_image(img, new_spacing=(1.0, 1.0, 1.0))
+
+    assert isinstance(resampled, nib.Nifti1Image), "Resampled output is not a NIfTI image"
+
+
+README.md
+empty file now
+
+requirements.txt
+anyio==4.2.0
+argon2-cffi==23.1.0
+argon2-cffi-bindings==21.2.0
+arrow==1.3.0
+asttokens==2.4.1
+async-lru==2.0.4
+attrs==23.2.0
+Babel==2.14.0
+beautifulsoup4==4.12.3
+bleach==6.1.0
+certifi==2023.11.17
+cffi==1.16.0
+charset-normalizer==3.3.2
+colorama==0.4.6
+comm==0.2.1
+contourpy==1.2.0
+cycler==0.12.1
+debugpy==1.8.0
+decorator==5.1.1
+defusedxml==0.7.1
+executing==2.0.1
+fastjsonschema==2.19.1
+filelock==3.9.0
+fonttools==4.47.2
+fqdn==1.5.1
+fsspec==2023.4.0
+h11==0.14.0
+httpcore==1.0.5
+httpx==0.27.0
+idna==3.6
+ipykernel==6.29.0
+ipython==8.20.0
+ipywidgets==8.1.3
+isoduration==20.11.0
+jedi==0.19.1
+Jinja2==3.1.3
+joblib==1.4.0
+json5==0.9.14
+jsonpointer==2.4
+jsonschema==4.21.1
+jsonschema-specifications==2023.12.1
+jupyter==1.0.0
+jupyter-console==6.6.3
+jupyter-events==0.9.0
+jupyter-lsp==2.2.2
+jupyter_client==8.6.0
+jupyter_core==5.7.1
+jupyter_server==2.12.5
+jupyter_server_terminals==0.5.2
+jupyterlab==4.2.4
+jupyterlab_pygments==0.3.0
+jupyterlab_server==2.27.3
+jupyterlab_widgets==3.0.11
+kiwisolver==1.4.5
+MarkupSafe==2.1.4
+matplotlib==3.8.2
+matplotlib-inline==0.1.6
+mistune==3.0.2
+mpmath==1.3.0
+nbclient==0.9.0
+nbconvert==7.14.2
+nbformat==5.9.2
+nest-asyncio==1.6.0
+networkx==3.0
+notebook==7.2.1
+notebook_shim==0.2.3
+numpy==1.26.3
+opencv-python==4.10.0.84
+overrides==7.6.0
+packaging==23.2
+pandas==2.2.0
+pandocfilters==1.5.1
+parso==0.8.3
+pillow==10.2.0
+platformdirs==4.1.0
+prometheus-client==0.19.0
+prompt-toolkit==3.0.43
+psutil==5.9.8
+pure-eval==0.2.2
+pycparser==2.21
+Pygments==2.17.2
+pyparsing==3.1.1
+python-dateutil==2.8.2
+python-json-logger==2.0.7
+pytz==2023.3.post1
+pywin32==306
+pywinpty==2.0.12
+PyYAML==6.0.1
+pyzmq==25.1.2
+qtconsole==5.5.2
+QtPy==2.4.1
+referencing==0.32.1
+requests==2.31.0
+rfc3339-validator==0.1.4
+rfc3986-validator==0.1.1
+rpds-py==0.17.1
+ruamel.yaml==0.18.6
+ruamel.yaml.clib==0.2.8
+scikit-learn==1.4.2
+scipy==1.12.0
+seaborn==0.13.2
+Send2Trash==1.8.2
+six==1.16.0
+sniffio==1.3.0
+soupsieve==2.5
+stack-data==0.6.3
+sympy==1.12
+terminado==0.18.0
+threadpoolctl==3.4.0
+tinycss2==1.2.1
+torch==2.1.2
+torchvision==0.16.2
+tornado==6.4
+tqdm==4.66.1
+traitlets==5.14.1
+types-python-dateutil==2.8.19.20240106
+typing_extensions==4.4.0
+tzdata==2023.4
+uri-template==1.3.0
+urllib3==2.1.0
+wcwidth==0.2.13
+webcolors==1.13
+webencodings==0.5.1
+websocket-client==1.7.0
+widgetsnbextension==4.0.11
+

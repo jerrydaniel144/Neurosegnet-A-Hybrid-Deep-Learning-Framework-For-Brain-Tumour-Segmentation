@@ -1,0 +1,34 @@
+model:
+  name: NeuroSegNet
+  in_channels: 4                     
+  out_channels: 1                   
+  patch_size: [128, 128, 128]
+  channels: [32,64,128]
+
+cnn_encoder:
+  backbone: resnet18
+  features: [32, 64, 128]
+  dropout: 0.3
+
+transformer:
+  embed_dim: 128
+  depths: [2, 2, 2]
+  num_heads: [4, 4, 4]
+  window_size: 4
+  mlp_ratio: 4
+  dropout: 0.1
+  attention_dropout: 0.1
+
+fusion:
+  strategy: late          
+  learnable_alpha: true
+
+decoder:
+  structure: unetpp
+  skip_connections: true
+
+data:
+  val_data_dir: "C:/Users/user/NeuroSegNet/data/val_preprocessed"
+
+inference:
+  output_dir: "experiments/neurosegnet_v1/inference_outputs"  

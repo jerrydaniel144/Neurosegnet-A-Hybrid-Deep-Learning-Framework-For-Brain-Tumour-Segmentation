@@ -1,0 +1,32 @@
+data_root: data/
+raw_data_dir: data/raw/
+processed_data_dir: data/processed/
+processed_stacked_dir: data/processed_stacked/
+
+modalities:
+  - t1n
+  - t1c
+  - t2w
+  - t2f
+
+target: seg
+
+patch_size: [128, 128, 128]
+stride: [64, 64, 64]
+
+normalization: zscore
+resample: 1mm³
+skull_strip: true
+bias_correction: true
+
+augmentations:
+  flip: true
+  rotate: true
+  elastic: true
+  noise: true
+
+patch_size: [128,128,128]
+modality_masking:            
+  enabled: true              # Activate masking during training
+  max_drop: 3                # Drop up to 3 of 4 
+  allow_zero: true               

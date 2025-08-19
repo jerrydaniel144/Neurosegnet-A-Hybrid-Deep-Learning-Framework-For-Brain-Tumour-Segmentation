@@ -1,0 +1,34 @@
+seed: 42
+epochs: 100              
+batch_size: 1
+num_workers: 0
+
+device: cpu              
+
+optimizer:
+  type: RMSprop          # This performs better than AdamW for 3D image tasks.
+  lr: 0.0003
+  weight_decay: 0.01
+
+scheduler:
+  type: ReduceLROnPlateau
+  mode: min
+  factor: 0.5
+  patience: 3
+  min_lr: !!float 1e-6
+
+loss:
+  type: DiceFocal
+  lambda_dice: 1.0
+  lambda_focal: 1.0
+  focal_alpha: 0.8
+  focal_gamma: 2.0
+  smooth_labels: 0.9      # soft labeling helps generalization
+  use_soft_labels: true   # important for stable loss behavior
+
+early_stopping:
+  patience: 15
+  monitor: val_loss
+  mode: min
+
+amp: false
