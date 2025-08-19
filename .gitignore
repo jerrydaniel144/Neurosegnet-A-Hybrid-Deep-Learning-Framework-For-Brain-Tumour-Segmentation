@@ -1,0 +1,54 @@
+# -------------------------------
+# Python cache & environment
+# -------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.env
+.venv
+
+# -------------------------------
+# IDE & editor settings
+# -------------------------------
+.vscode/
+.idea/
+*.swp
+
+# -------------------------------
+# Jupyter & logs
+# -------------------------------
+.ipynb_checkpoints/
+*.log
+
+# -------------------------------
+# Deep Learning: models & training
+# -------------------------------
+checkpoints/
+outputs/
+runs/
+*.pth
+*.pt
+*.onnx
+
+# -------------------------------
+# Medical Imaging datasets (MRI, BraTS)
+# -------------------------------
+data/
+dataset/
+BraTS*
+*.nii
+*.nii.gz
+
+# -------------------------------
+# Other large/binary files
+# -------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.h5
+*.npy
+*.npz
