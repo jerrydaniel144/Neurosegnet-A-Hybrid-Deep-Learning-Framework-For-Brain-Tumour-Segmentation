@@ -32,7 +32,7 @@ def preprocess_nii(file_path):
     return data["image"].unsqueeze(0)  # Add batch dim
 
 # App UI 
-st.title( "NeuroSegNet Tumor Segmentation System")
+st.title("NeuroSegNet Tumor Segmentation System")
 
 uploaded_file = st.file_uploader("Upload 4-channel NIfTI (.nii.gz) volume", type=["nii.gz"])
 show_gradcam = st.checkbox("Show Grad-CAM", value=True)

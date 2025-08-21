@@ -2,11 +2,11 @@ model:
   name: NeuroSegNet
   in_channels: 4                     
   out_channels: 1                   
-  patch_size: [128, 128, 128]
+  patch_size: [192, 192, 160]
   channels: [32,64,128]
 
 cnn_encoder:
-  backbone: resnet18
+  backbone: resnet50
   features: [32, 64, 128]
   dropout: 0.3
 

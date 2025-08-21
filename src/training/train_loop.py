@@ -7,7 +7,9 @@ import sys
 import pandas as pd
 
 # Add project root to import local modules
-sys.path.append("C:/Users/user/NeuroSegNet/")
+sys.path.append("C:/Users/user/NeuroSegNet/") #-----> On Runpod/Linux, you’ll want to replace that with something portable like.
+#sys.path.append(str(Path(__file__).resolve().parents[2])) ----> Windows-specific.
+
 from src.training.loss import DiceFocalLoss
 from src.training.validation import evaluate
 

@@ -1,12 +1,12 @@
 seed: 42
 epochs: 100              
-batch_size: 1
-num_workers: 0
+batch_size: 4
+num_workers: 4
 
-device: cpu              
+device: cuda         
 
 optimizer:
-  type: RMSprop          # This performs better than AdamW for 3D image tasks.
+  type: AdamW         
   lr: 0.0003
   weight_decay: 0.01
 
@@ -31,4 +31,4 @@ early_stopping:
   monitor: val_loss
   mode: min
 
-amp: false
+amp: true

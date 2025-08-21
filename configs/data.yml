@@ -11,8 +11,8 @@ modalities:
 
 target: seg
 
-patch_size: [128, 128, 128]
-stride: [64, 64, 64]
+patch_size: [192, 192, 160]
+stride: [96, 96, 80]
 
 normalization: zscore
 resample: 1mm³
@@ -25,7 +25,6 @@ augmentations:
   elastic: true
   noise: true
 
-patch_size: [128,128,128]
 modality_masking:            
   enabled: true              # Activate masking during training
   max_drop: 3                # Drop up to 3 of 4 
