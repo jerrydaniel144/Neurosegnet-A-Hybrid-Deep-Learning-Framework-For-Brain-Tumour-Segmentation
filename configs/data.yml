@@ -1,6 +1,5 @@
 data_root: data/
 raw_data_dir: data/raw/
-processed_data_dir: data/processed/
 processed_stacked_dir: data/processed_stacked/
 
 modalities:
